@@ -250,6 +250,8 @@ class LlamaModel(SeqToSeqModel):
             self.model = LlamaForCausalLM.from_pretrained(self.model_path, **args)
             if self.lora_path:
                 self.model = PeftModel.from_pretrained(self.model, self.lora_path)
+            if not self.load_8bit:
+                self.model = self.model.half()
             self.model.eval()
             if not self.load_8bit:
                 self.model.to(self.device)
@@ -367,33 +369,30 @@ def load_quant(
     return model
 
 
+# Use AutoGPTQ
 class GPTQModel(LlamaModel):
     quantized_path: str
     model: Optional[LlamaForCausalLM]
     tokenizer: Optional[LlamaTokenizer]
-    num_bits: int = 4
-    group_size: int = 128
 
     def load(self):
-        # https://github.com/qwopqwop200/GPTQ-for-LLaMa/blob/05781593c818d4dc8adc2d32c975e83d17d2b9a8/llama_inference.py
-        torch.backends.cuda.matmul.allow_tf32 = False
-        torch.backends.cudnn.allow_tf32 = False
-        if not Path(self.quantized_path).exists():
-            url = f"https://huggingface.co/{self.model_path}/resolve/main/{self.quantized_path}"
-            download_url(url, root=".")
-
         if self.model is None:
-            self.model = load_quant(
-                model=self.model_path,
-                checkpoint=self.quantized_path,
-                wbits=self.num_bits,
-                groupsize=self.group_size,
+            from auto_gptq import AutoGPTQForCausalLM, exllama_set_max_input_length
+            model = AutoGPTQForCausalLM.from_quantized(
+                self.model_path,
+                low_cpu_mem_usage=True,
+                device_map="auto",
+                model_basename=self.quantized_path,
+                use_safetensors=True,
+                trust_remote_code=True,
+                inject_fused_mlp=False,
+                inject_fused_attention=False,
+                disable_exllama=False
             )
-            self.model.to(self.device)
-
+            self.model = exllama_set_max_input_length(model, 4096)
         if self.tokenizer is None:
-            self.tokenizer = LlamaTokenizer.from_pretrained(self.model_path)
-            self.test_max_length()
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+            # self.test_max_length()
 
     def test_max_length(self):
         # Detect any OOMs at the beginning
