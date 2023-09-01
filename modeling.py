@@ -497,6 +497,26 @@ class RWKVModel(EvalModel):
         self.load()
         return len(self.model.encode(text))
 
+class VllmModel(SeqToSeqModel):
+    def load(self):
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_path, trust_remote_code=True
+            )
+        if self.model is None:
+            from vllm import LLM, SamplingParams
+            self.model = LLM(model=self.model_path, trust_remote_code=True)
+
+    def run(self, prompt: str, **kwargs) -> str:
+        self.load()
+        ## use vllm quickstart params, maybe use load from generation_config.json from model
+        from vllm import LLM, SamplingParams
+        sampling_params = SamplingParams(temperature=0.8, top_p=0.95, **kwargs)
+        outputs  = self.model.generate(prompt, sampling_params)
+        return outputs[0].outputs[0].text
+
+    def get_choice(self, text: str, **kwargs) -> str:
+        return self.run(text, **kwargs)
 
 def select_model(model_name: str, **kwargs) -> EvalModel:
     model_map = dict(
@@ -507,6 +527,7 @@ def select_model(model_name: str, **kwargs) -> EvalModel:
         openai=OpenAIModel,
         rwkv=RWKVModel,
         gptq=GPTQModel,
+        vllm=VllmModel,
     )
     model_class = model_map.get(model_name)
     if model_class is None:
