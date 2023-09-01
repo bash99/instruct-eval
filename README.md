@@ -1,10 +1,12 @@
 ## :camel: 🍮 📚 InstructEval: Towards Holistic Evaluation of Instruction-Tuned Large Language Models
 
-[Paper](https://arxiv.org/abs/2306.04757) | [Model](https://huggingface.co/declare-lab/flan-alpaca-xxl) | [Leaderboard](https://declare-lab.net/instruct-eval/)
+[Paper](https://arxiv.org/abs/2306.04757) | [Model](https://huggingface.co/declare-lab/flan-alpaca-gpt4-xl) | [Leaderboard](https://declare-lab.net/instruct-eval/)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/declare-lab/instruct-eval/main/docs/logo.png" alt="" width="300" height="300">
 </p>
+
+📣 **Red-Eval**, the benchmark for **Safety** Evaluation of LLMs has been added: [Red-Eval](https://github.com/declare-lab/instruct-eval/tree/main/red-eval)
 
 📣 Introducing **Red-Eval** to evaluate the safety of the LLMs using several jailbreaking prompts. With **Red-Eval** one could jailbreak/red-team GPT-4 with a 65.1% attack success rate and ChatGPT could be jailbroken 73% of the time as measured on DangerousQA and HarmfulQA benchmarks. More details are here: [Code](https://github.com/declare-lab/red-instruct) and [Paper](https://arxiv.org/abs/2308.09662).
 
