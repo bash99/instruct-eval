@@ -401,6 +401,9 @@ class GPTQModel(LlamaModel):
 
 
 class ChatGLMModel(SeqToSeqModel):
+    use_fastllm: bool = False #use fastllm for speed up
+    use_8bit:    bool = False #use fastllm or fastllm 8bit to accl
+
     def load(self):
         if self.tokenizer is None:
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -410,8 +413,15 @@ class ChatGLMModel(SeqToSeqModel):
             self.model = AutoModel.from_pretrained(
                 self.model_path, trust_remote_code=True
             ).half()  # FP16 is required for ChatGLM
-            self.model.eval()
-            self.model.to(self.device)
+            if self.use_fastllm:
+                from fastllm_pytools import llm
+                if self.use_8bit:
+                    self.model = llm.from_hf(self.model, self.tokenizer, dtype = "int8")
+                else:
+                    self.model = llm.from_hf(self.model, self.tokenizer, dtype = "float16")
+            else:
+                self.model.eval()
+                self.model.to(self.device)
 
     def run(self, prompt: str, **kwargs) -> str:
         self.load()
