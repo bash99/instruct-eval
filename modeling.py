@@ -185,14 +185,22 @@ class SeqToSeqModel(EvalModel):
 
 
 class CausalModel(SeqToSeqModel):
+    load_fp16: bool = False # force torch.float16 to fix error when use V100 GPU with bf format models
     def load(self):
         if self.model is None:
             args = {}
             if self.load_8bit:
                 args.update(device_map="auto", load_in_8bit=True)
+            else:
+                if self.load_fp16:
+                    args.update(device_map="auto", torch_dtype=torch.float16)
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path, trust_remote_code=True, **args
             )
+            from transformers.generation.utils import GenerationConfig
+            self.model.generation_config = GenerationConfig.from_pretrained(self.model_path)
+            if not self.load_8bit:
+                self.model = self.model.half()
             self.model.eval()
             if not self.load_8bit:
                 self.model.to(self.device)
@@ -498,6 +506,7 @@ class RWKVModel(EvalModel):
         return len(self.model.encode(text))
 
 class VllmModel(SeqToSeqModel):
+    dtype: str = "auto"
     def load(self):
         if self.tokenizer is None:
             self.tokenizer = AutoTokenizer.from_pretrained(
@@ -505,7 +514,7 @@ class VllmModel(SeqToSeqModel):
             )
         if self.model is None:
             from vllm import LLM, SamplingParams
-            self.model = LLM(model=self.model_path, trust_remote_code=True)
+            self.model = LLM(model=self.model_path, trust_remote_code=True, dtype=self.dtype)
 
     def run(self, prompt: str, **kwargs) -> str:
         self.load()
@@ -514,6 +523,42 @@ class VllmModel(SeqToSeqModel):
         sampling_params = SamplingParams(temperature=0.8, top_p=0.95, **kwargs)
         outputs  = self.model.generate(prompt, sampling_params)
         return outputs[0].outputs[0].text
+
+    def get_choice(self, text: str, **kwargs) -> str:
+        return self.run(text, **kwargs)
+
+class FastllmModel(SeqToSeqModel):
+    use_8bit:    bool = False #use fastllm or fastllm 8bit to accl
+    split_gpu:    bool = False #split memory to 2 gpu
+    fastllm_model_path: str = ""
+
+    def load(self):
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_path, trust_remote_code=True
+            )
+        from fastllm_pytools import llm
+        if self.model is None:
+            if self.fastllm_model_path != "":
+                if self.split_gpu:
+                    llm.set_device_map(["cuda:0", "cuda:1"])
+                self.model = llm.model(self.fastllm_model_path)
+            else:
+                #self.model = AutoModelForCausalLM.from_pretrained(self.model_path, device_map="cpu", trust_remote_code=True, fp16=True).eval()
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_path, device_map="cpu", trust_remote_code=True).eval()
+                if self.use_8bit:
+                    self.model = llm.from_hf(self.model, self.tokenizer, dtype = "int8")
+                else:
+                    if self.split_gpu:
+                        llm.set_device_map(["cuda:0", "cuda:1"])
+                    self.model = llm.from_hf(self.model, self.tokenizer, dtype = "float16")
+        from transformers.generation.utils import GenerationConfig
+        self.model.generation_config = GenerationConfig.from_pretrained(self.model_path)
+
+    def run(self, prompt: str, **kwargs) -> str:
+        self.load()
+        pred, history  = self.model.chat(self.tokenizer, prompt, history=[])
+        return pred[0]
 
     def get_choice(self, text: str, **kwargs) -> str:
         return self.run(text, **kwargs)
@@ -528,6 +573,7 @@ def select_model(model_name: str, **kwargs) -> EvalModel:
         rwkv=RWKVModel,
         gptq=GPTQModel,
         vllm=VllmModel,
+        fastllm=FastllmModel,
     )
     model_class = model_map.get(model_name)
     if model_class is None:
